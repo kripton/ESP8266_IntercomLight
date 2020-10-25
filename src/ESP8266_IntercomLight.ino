@@ -169,7 +169,7 @@ void setup()
         anim["color_b"] = state[chan]["color_b"];
         anim["curstep"] = 0;
         anim["type"] = property;
-        serializeJson(anim, Serial);
+        //serializeJson(anim, Serial);
         animations[chan + property] = anim;
       } else {
         // Find the animation and remove it
@@ -208,16 +208,16 @@ void loop()
 
   // Iterate over all running animations and add together the LED's values
   for (JsonObject::iterator it=animations.as<JsonObject>().begin(); it!=animations.as<JsonObject>().end(); ++it) {
-    Serial.printf("Animation \"%s\"\n", it->key());
+    //Serial.printf("Animation \"%s\"\n", it->key());
     JsonObject anim = it->value();
 
-    Serial.printf("CurStep: %d\n", anim["curstep"].as<int>());
+    //Serial.printf("CurStep: %d\n", anim["curstep"].as<int>());
 
     for (int i = 0; i < LED1_NUMLEDS; i++)
     {
       float factor = animationSteps[anim["type"].as<String>()][i%2 ? "odd": "even"][anim["curstep"].as<int>()].as<float>();
-      Serial.printf("LED %d OddEven: %s Factor: %f\n", i, i%2 ? "odd": "even", factor);
-      serializeJson(animationSteps[anim["type"].as<String>()][i%2 ? "odd": "even"][anim["curstep"].as<int>()], Serial);
+      //Serial.printf("LED %d OddEven: %s Factor: %f\n", i, i%2 ? "odd": "even", factor);
+      //serializeJson(animationSteps[anim["type"].as<String>()][i%2 ? "odd": "even"][anim["curstep"].as<int>()], Serial);
       ledValues[i][0] += anim["color_r"].as<int>() * factor;
       ledValues[i][1] += anim["color_g"].as<int>() * factor;
       ledValues[i][2] += anim["color_b"].as<int>() * factor;
@@ -232,6 +232,7 @@ void loop()
 
   for (int i = 0; i < LED1_NUMLEDS; i++)
   {
+    // Cap the values to 255
     if (ledValues[i][0] > 255) {
       ledValues[i][0] = 255;
     }
@@ -241,9 +242,18 @@ void loop()
     if (ledValues[i][2] > 255) {
       ledValues[i][2] = 255;
     }
+    // And write the ledValues to the actual pixel object
     pixels.SetPixelColor(i, RgbColor(ledValues[i][0], ledValues[i][1],ledValues[i][2]));
   }
   pixels.Show();
 
-  delay(50);
+  delay(10);
+  OscWiFi.update();
+  delay(10);
+  OscWiFi.update();
+  delay(10);
+  OscWiFi.update();
+  delay(10);
+  OscWiFi.update();
+  delay(10);
 }
