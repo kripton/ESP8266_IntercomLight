@@ -34,7 +34,7 @@ DynamicJsonDocument state(2048);
 DynamicJsonDocument animationSteps(2048);
 
 // The actual running animations
-DynamicJsonDocument animations(2048);
+DynamicJsonDocument animations(4096);
 
 // To add together the values of the individual animations
 unsigned long ledValues[LED1_NUMLEDS][3];
@@ -162,7 +162,7 @@ void setup()
       // It's not a color information => time to add or remove an animation
       if (state[chan][property]) {
         // Add an animation
-        StaticJsonDocument<512> doc;
+        StaticJsonDocument<256> doc;
         JsonObject anim = doc.to<JsonObject>();
         anim["color_r"] = state[chan]["color_r"];
         anim["color_g"] = state[chan]["color_g"];
@@ -174,6 +174,7 @@ void setup()
       } else {
         // Find the animation and remove it
         animations.remove(chan + property);
+        animations.garbageCollect();
       }
     }
     Serial.println();
