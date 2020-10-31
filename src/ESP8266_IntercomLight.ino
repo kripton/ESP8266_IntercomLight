@@ -15,16 +15,14 @@ IPAddress my_ip(192, 168, 2, 231);
 IPAddress my_gw(0, 0, 0, 0);
 IPAddress my_netmask(255, 255, 255, 0);
 
-// Locally attached LED pixel string (P1)
-#define LED1_DATA 19
-//#define     LED1_CLK      23
-#define LED1_NUMLEDS 12
+// Locally attached LED pixel string + ring (Pin: RX hardcoded for ESP8266)
+#define LED1_NUMLEDS 20 // 8 String + 12 Ring
 
 unsigned long debounceTime = 500; // ms
 unsigned int pingCount = 0;
 
 ///// Globals /////
-NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> pixels(LED1_NUMLEDS, LED1_DATA);
+NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> pixels(LED1_NUMLEDS);
 unsigned long lastDetection = 0;
 
 // Current state of running calls, talks or texts per channel
@@ -111,11 +109,7 @@ void setup()
 
   // Initialize the LED string in RED
   pixels.Begin();
-  pixels.ClearTo(RgbColor(0, 0, 0));
-  for (int i = 0; i < LED1_NUMLEDS; i++)
-  {
-    pixels.SetPixelColor(i, RgbColor((i * 20) + 10, 0, 0));
-  }
+  pixels.ClearTo(RgbColor(255, 0, 0));
   pixels.Show();
 
   // Wifi config + connect
@@ -129,38 +123,28 @@ void setup()
 
   initAnimationSteps();
 
-  OscWiFi.subscribe(53000, "/intercom/*/*", [](const OscMessage &m) {
+  OscWiFi.subscribe(53000, "/intercom/*", [](const OscMessage &m) {
+    uint16 fieldsConsumed = 0;
+
     // Split the address to get the channel and property names
-    String chan = m.address().substring(10, 11);
-    String property = m.address().substring(12);
-    Serial.print(chan);
-    Serial.print(" ");
-    Serial.print(property);
-    Serial.print(" ");
+    String type = m.address().substring(10);
 
-    state[chan][property] = m.arg<int>(0);
+    Serial.printf("OSC FROM %s:%d. \"%s\" Size: %d\n", m.remoteIP().c_str(), m.remotePort(), m.address().c_str(), m.size());
+    Serial.printf("\tType: %s\n", type.c_str());
 
-    Serial.print(m.remoteIP());
-    Serial.print(" ");
-    Serial.print(m.remotePort());
-    Serial.print(" ");
-    Serial.print(m.size());
-    Serial.print(" ");
-    Serial.print(m.address());
-    Serial.print(" ");
-    Serial.print(m.arg<int>(0));
-    if (m.size() > 1) {
-      Serial.print(" ");
-      Serial.print(m.arg<int>(1));
-      Serial.print(" ");
-      Serial.print(m.arg<int>(2));
-
-      state[chan]["color_r"] = m.arg<int>(0);
-      state[chan]["color_g"] = m.arg<int>(1);
-      state[chan]["color_b"] = m.arg<int>(2);
-    } else {
-      // It's not a color information => time to add or remove an animation
-      if (state[chan][property]) {
+    if (type == "chanColors") {
+      while (fieldsConsumed < m.size()) {
+        String chanName = m.arg<String>(fieldsConsumed);
+        state[chanName]["color_r"] = m.arg<int>(fieldsConsumed + 1);
+        state[chanName]["color_g"] = m.arg<int>(fieldsConsumed + 2);
+        state[chanName]["color_b"] = m.arg<int>(fieldsConsumed + 3);
+        fieldsConsumed += 4;
+      }
+      serializeJson(state, Serial);
+    } else if (type == "call" || type == "talk" || type == "text") {
+      String chan = m.arg<String>(0);
+      Serial.printf("Chan: %s ÖnÖff: %d\n", chan.c_str(), m.arg<int>(1));
+      if (m.arg<int>(1)) {
         // Add an animation
         StaticJsonDocument<256> doc;
         JsonObject anim = doc.to<JsonObject>();
@@ -168,24 +152,19 @@ void setup()
         anim["color_g"] = state[chan]["color_g"];
         anim["color_b"] = state[chan]["color_b"];
         anim["curstep"] = 0;
-        anim["type"] = property;
+        anim["type"] = type;
         //serializeJson(anim, Serial);
-        animations[chan + property] = anim;
+        animations[chan + type] = anim;
       } else {
         // Find the animation and remove it
-        animations.remove(chan + property);
+        animations.remove(chan + type);
         animations.garbageCollect();
       }
     }
-    Serial.println();
   });
 
   // Set the LEDs to GREEN briefly
-  pixels.ClearTo(RgbColor(0, 0, 0));
-  for (int i = 0; i < LED1_NUMLEDS; i++)
-  {
-    pixels.SetPixelColor(i, RgbColor(0, (i * 20) + 10, 0));
-  }
+  pixels.ClearTo(RgbColor(0, 255, 0));
   pixels.Show();
   delay(500);
 
@@ -199,6 +178,7 @@ void loop()
 {
   OscWiFi.update(); // should be called
 
+  // Initialise all to 0
   pixels.ClearTo(RgbColor(0, 0, 0));
   for (int i = 0; i < LED1_NUMLEDS; i++)
   {
@@ -214,7 +194,7 @@ void loop()
 
     //Serial.printf("CurStep: %d\n", anim["curstep"].as<int>());
 
-    for (int i = 0; i < LED1_NUMLEDS; i++)
+    for (int i = 8; i < LED1_NUMLEDS; i++)
     {
       float factor = animationSteps[anim["type"].as<String>()][i%2 ? "odd": "even"][anim["curstep"].as<int>()].as<float>();
       //Serial.printf("LED %d OddEven: %s Factor: %f\n", i, i%2 ? "odd": "even", factor);
@@ -230,6 +210,10 @@ void loop()
       anim["curstep"] = 0;
     }
   }
+
+  // Now display the current config (Signal Channels and CALL Channels)
+  // on the LED string
+
 
   for (int i = 0; i < LED1_NUMLEDS; i++)
   {
