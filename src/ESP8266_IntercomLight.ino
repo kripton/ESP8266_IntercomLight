@@ -20,6 +20,7 @@ IPAddress my_netmask(255, 255, 255, 0);
 
 unsigned long debounceTime = 500; // ms
 unsigned int pingCount = 0;
+unsigned int connected = 0;
 
 ///// Globals /////
 NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> pixels(LED1_NUMLEDS);
@@ -130,7 +131,6 @@ void setup()
     String type = m.address().substring(10);
 
     Serial.printf("OSC FROM %s:%d. \"%s\" Size: %d\n", m.remoteIP().c_str(), m.remotePort(), m.address().c_str(), m.size());
-    Serial.printf("\tType: %s\n", type.c_str());
 
     if (type == "chanColors") {
       while (fieldsConsumed < m.size()) {
@@ -141,6 +141,7 @@ void setup()
         fieldsConsumed += 4;
       }
       serializeJson(state, Serial);
+      connected = 1;
     } else if (type == "call" || type == "talk" || type == "text") {
       String chan = m.arg<String>(0);
       Serial.printf("Chan: %s ÖnÖff: %d\n", chan.c_str(), m.arg<int>(1));
@@ -162,6 +163,18 @@ void setup()
       }
     }
   });
+
+  // Set the LEDs to YELLOW (= waiting for Callboy)
+  pixels.ClearTo(RgbColor(255, 255, 0));
+  pixels.Show();
+
+  // Wait for the OSC message to come in
+  while (!connected) {
+    OscWiFi.update();
+    pixels.Show();
+    delay(200);
+    OscWiFi.send("255.255.255.255", 57121, "/intercom/ping");
+  }
 
   // Set the LEDs to GREEN briefly
   pixels.ClearTo(RgbColor(0, 255, 0));
