@@ -19,8 +19,11 @@ IPAddress my_netmask(255, 255, 255, 0);
 #define LED1_NUMLEDS 20 // 8 String + 12 Ring
 
 unsigned long debounceTime = 500; // ms
-unsigned int pingCount = 0;
-unsigned int connected = 0;
+unsigned int wifiConnected = 0;
+unsigned int intercomConnected = 0;
+unsigned int statusSpinnerStep = 0;
+unsigned int signalChannels = 0x0F; // bit mask which channels are SIGNALed
+unsigned int callChannels = 0x01;   // bit mask which channels are CALLed using the button
 
 ///// Globals /////
 NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> pixels(LED1_NUMLEDS);
@@ -103,6 +106,22 @@ void initAnimationSteps()
   animationSteps["text"]["even"][9] = 0.4;
 }
 
+void statusSpinner() {
+  RgbColor col;
+  if (!wifiConnected) {
+    col = RgbColor(255, 0, 0);
+  } else {
+    col = RgbColor(255, 255, 0);
+  }
+  pixels.ClearTo(RgbColor(0, 0, 0));
+  pixels.SetPixelColor(8 + statusSpinnerStep, col);
+  pixels.Show();
+  statusSpinnerStep++;
+  if (statusSpinnerStep >= 12) {
+    statusSpinnerStep = 0;
+  }
+}
+
 void setup()
 {
   Serial.begin(115200);
@@ -119,10 +138,14 @@ void setup()
   WiFi.begin(wifi_ssid, wifi_password);
   while (WiFi.status() != WL_CONNECTED)
   {
-    delay(500);
+    statusSpinner();
+    delay(200);
   }
 
   initAnimationSteps();
+
+  wifiConnected = 1;
+  statusSpinner();
 
   OscWiFi.subscribe(53000, "/intercom/*", [](const OscMessage &m) {
     uint16 fieldsConsumed = 0;
@@ -141,7 +164,7 @@ void setup()
         fieldsConsumed += 4;
       }
       serializeJson(state, Serial);
-      connected = 1;
+      intercomConnected = 1;
     } else if (type == "call" || type == "talk" || type == "text") {
       String chan = m.arg<String>(0);
       Serial.printf("Chan: %s ÖnÖff: %d\n", chan.c_str(), m.arg<int>(1));
@@ -164,14 +187,10 @@ void setup()
     }
   });
 
-  // Set the LEDs to YELLOW (= waiting for Callboy)
-  pixels.ClearTo(RgbColor(255, 255, 0));
-  pixels.Show();
-
-  // Wait for the OSC message to come in
-  while (!connected) {
+  // Wait for the OSC message containing the channels and colors to come in
+  while (!intercomConnected) {
     OscWiFi.update();
-    pixels.Show();
+    statusSpinner();
     delay(200);
     OscWiFi.send("255.255.255.255", 57121, "/intercom/ping");
   }
@@ -179,7 +198,7 @@ void setup()
   // Set the LEDs to GREEN briefly
   pixels.ClearTo(RgbColor(0, 255, 0));
   pixels.Show();
-  delay(500);
+  delay(800);
 
   // Clear LEDs
   pixels.ClearTo(RgbColor(0, 0, 0));
@@ -191,7 +210,7 @@ void loop()
 {
   OscWiFi.update(); // should be called
 
-  // Initialise all to 0
+  // Initialise all LEDs to 0
   pixels.ClearTo(RgbColor(0, 0, 0));
   for (int i = 0; i < LED1_NUMLEDS; i++)
   {
@@ -226,7 +245,27 @@ void loop()
 
   // Now display the current config (Signal Channels and CALL Channels)
   // on the LED string
+  unsigned int curChanNum = 0;
+  for (JsonObject::iterator it=state.as<JsonObject>().begin(); it!=state.as<JsonObject>().end(); ++it) {
+    JsonObject chan = it->value();
+    // if we shall signal that channel, make the curChanNum-LED in that channel's color
+    if ((signalChannels >> curChanNum) & 0x01) {
+      ledValues[curChanNum][0] = chan["color_r"];
+      ledValues[curChanNum][1] = chan["color_g"];
+      ledValues[curChanNum][2] = chan["color_b"];
+    }
+    if ((callChannels >> curChanNum) & 0x01) {
+      ledValues[curChanNum + 4][0] = chan["color_r"];
+      ledValues[curChanNum + 4][1] = chan["color_g"];
+      ledValues[curChanNum + 4][2] = chan["color_b"];
+    }
 
+    if (curChanNum == 3) {
+      // We only have 4 LEDs for signalling and 4 for CALLing
+      break;
+    }
+    curChanNum++;
+  }
 
   for (int i = 0; i < LED1_NUMLEDS; i++)
   {
